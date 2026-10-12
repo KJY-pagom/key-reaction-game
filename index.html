@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QWE 키 반응 게임</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1e212a;
+    --key: #2a2e3a;
+    --key-edge: #0d0f14;
+    --text: #e8eaf0;
+    --muted: #8a90a2;
+    --accent: #4f8cff;
+    --good: #3ecf8e;
+    --bad: #ff5c6c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .game {
+    width: 100%;
+    max-width: 520px;
+    text-align: center;
+  }
+  h1 { font-size: 22px; margin: 0 0 16px; font-weight: 600; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 10px 4px;
+  }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 14px;
+    height: 160px;
+  }
+  .target {
+    grid-column: 2;
+    grid-row: 1;
+    width: 140px;
+    height: 140px;
+    border: 3px solid var(--key);
+    border-radius: 24px;
+    background: var(--panel);
+    font-size: 96px;
+    font-weight: 800;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .08s, border-color .1s;
+  }
+  .target.end { font-size: 44px; }
+  .target.count { color: var(--accent); animation: countPop 1s ease-out; }
+  @keyframes countPop {
+    0%   { transform: scale(1.6); opacity: 0; }
+    18%  { transform: scale(1); opacity: 1; }
+    80%  { transform: scale(1); opacity: 1; }
+    100% { transform: scale(.85); opacity: .3; }
+  }
+  .target.milestone { animation: frameGlow .9s ease-out; }
+  @keyframes frameGlow {
+    0%   { border-color: #b896ff; box-shadow: 0 0 0 2px rgba(170, 130, 255, .55), 0 0 22px rgba(100, 160, 255, .45); }
+    100% { border-color: var(--key); box-shadow: 0 0 0 0 rgba(170, 130, 255, 0), 0 0 0 rgba(100, 160, 255, 0); }
+  }
+  .history {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .history span { font-weight: 800; line-height: 1; }
+  .history .ok { color: var(--good); }
+  .history .ng { color: var(--bad); }
+  .queue {
+    grid-column: 3;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .queue span {
+    font-weight: 800;
+    line-height: 1;
+    color: var(--muted);
+  }
+  .target.pop { transform: scale(1.15); }
+  .target.good { color: var(--good); border-color: var(--good); }
+  .target.bad { color: var(--bad); border-color: var(--bad); animation: shake .25s; }
+  /* 콤보 전용 글씨: 둥근 굵은 폰트 + 보라 그라데이션 + 흰/진보라 이중 테두리 (CSS로 직접 제작) */
+  .bm {
+    --g1: #f3d9ff; --g2: #c27bff; --g3: #8a36f0; --g4: #6a1fd0;
+    --inner: #ffffff; --outer: #3d0f7a;
+    position: relative;
+    display: inline-block;
+    isolation: isolate;
+    font-family: 'Fredoka', 'Arial Rounded MT Bold', 'Segoe UI', sans-serif;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: .02em;
+    padding: 0 .12em;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .bm::before, .bm::after {
+    content: attr(data-t);
+    position: absolute;
+    inset: 0;
+    padding: inherit;
+  }
+  .bm::before { color: var(--outer); -webkit-text-stroke: .32em var(--outer); z-index: 0; }   /* 바깥 진보라 테두리 */
+  .bm::after  { color: var(--inner); -webkit-text-stroke: .17em var(--inner); z-index: 1; }   /* 안쪽 흰 테두리 */
+  .bm-fill {                                                                                 /* 그라데이션 글자 */
+    position: relative;
+    z-index: 2;
+    background: linear-gradient(180deg, var(--g1) 0%, var(--g2) 38%, var(--g3) 62%, var(--g4) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+  .combo-area {
+    height: 132px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin-top: 8px;
+    position: relative;
+    isolation: isolate;
+    /* 콤보 과열 단계별 값 (heat-1 ~ heat-5 에서 덮어씀) */
+    --aura: transparent;
+    --aura-op: 0;
+    --pulse: 1.2s;
+    --glow: none;
+    --jitter: 0px;
+  }
+  .combo-num {
+    font-size: 40px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transition: transform .08s, color .15s;
+  }
+  .combo-num.zero .bm { filter: grayscale(1); opacity: .5; }
+  .combo-num { position: relative; }
+  /* 콤보 뒤에서 맥동하는 오라 */
+  .combo-num::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 240px; height: 110px;   /* 위쪽이 큰 글자 프레임에 닿지 않는 높이 */
+    transform: translate(-50%, -50%);
+    background: radial-gradient(ellipse at center, var(--aura) 0%, transparent 65%);
+    opacity: var(--aura-op);
+    z-index: -1;
+    pointer-events: none;
+    animation: aura var(--pulse) ease-in-out infinite;
+    transition: opacity .3s;
+  }
+  @keyframes aura {
+    0%, 100% { transform: translate(-50%, -50%) scale(.95); }
+    50% { transform: translate(-50%, -50%) scale(1.05); }
+  }
+  .combo-area .bm { filter: var(--glow); transition: filter .3s; }
+  .combo-area.hot .combo-num .bm { animation: glowPulse var(--pulse) ease-in-out infinite, jitter .09s steps(2) infinite; }
+  @keyframes glowPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .92; }
+  }
+  @keyframes jitter {
+    0% { transform: translate(calc(var(--jitter) * -1), var(--jitter)); }
+    50% { transform: translate(var(--jitter), calc(var(--jitter) * -1)); }
+    100% { transform: translate(0, 0); }
+  }
+  .combo-area.heat-1 {
+    --aura: rgba(160, 80, 255, .55); --aura-op: .5; --pulse: 1.2s;
+    --glow: drop-shadow(0 0 6px rgba(170, 90, 255, .9));
+  }
+  .combo-area.heat-2 {
+    --aura: rgba(130, 90, 255, .7); --aura-op: .7; --pulse: .9s;
+    --glow: drop-shadow(0 0 4px rgba(120, 170, 255, 1)) drop-shadow(0 0 12px rgba(170, 90, 255, .9));
+  }
+  .combo-area.heat-3 {
+    --aura: rgba(90, 150, 255, .8); --aura-op: .85; --pulse: .6s; --jitter: .5px;
+    --glow: brightness(1.1) drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px rgba(90, 160, 255, 1)) drop-shadow(0 0 20px rgba(160, 80, 255, .9));
+  }
+  .combo-area.heat-4 {
+    --aura: rgba(110, 170, 255, .7); --aura-op: .9; --pulse: .4s; --jitter: 1px;
+    --glow: brightness(1.15) drop-shadow(0 0 3px #fff) drop-shadow(0 0 14px rgba(80, 170, 255, 1)) drop-shadow(0 0 28px rgba(170, 80, 255, 1));
+  }
+  .combo-area.heat-5 {
+    --aura: rgba(170, 200, 255, .75); --aura-op: .9; --pulse: .25s; --jitter: 1.8px;
+    --glow: brightness(1.25) saturate(1.2) drop-shadow(0 0 4px #fff) drop-shadow(0 0 18px rgba(100, 190, 255, 1)) drop-shadow(0 0 36px rgba(180, 90, 255, 1));
+  }
+  .combo-num.pop { transform: scale(1.2); }
+  .combo-label { margin-top: 2px; }
+  .combo-bonus {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--good);
+    height: 20px;
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .combo-bonus.show { opacity: 1; transition: none; }
+  .combo-bonus .bm { --g1: #dcffe9; --g2: #6ff0ac; --g3: #2fc47e; --g4: #1d9a60; --outer: #0d4a2e; }
+  .timebar {
+    height: 6px;
+    background: var(--panel);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 0 0 24px;
+  }
+  .timebar > div {
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    transition: width .1s linear;
+  }
+  .controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  button.secondary { background: var(--panel); color: var(--text); }
+  button:disabled { opacity: .4; cursor: default; }
+  /* 일시정지 중에는 글자를 가려서 미리 볼 수 없게 */
+  .game.paused .stage > * { filter: blur(14px); opacity: .5; transition: filter .15s; }
+  .game.paused .stage { position: relative; }
+  .game.paused .stage::after {
+    content: 'PAUSE';
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; font-weight: 800; letter-spacing: 6px; color: var(--text);
+  }
+  button, select {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  select { background: var(--panel); color: var(--text); }
+  .msg { color: var(--muted); font-size: 14px; min-height: 40px; margin-top: 14px; line-height: 1.5; }
+  .msg b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="game">
+  <h1>⌨️ 키 반응 게임</h1>
+
+  <div class="stats">
+    <div class="stat"><div class="label">점수</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">최대 콤보</div><div class="value" id="maxCombo">0</div></div>
+    <div class="stat"><div class="label">정확도</div><div class="value" id="acc">-</div></div>
+    <div class="stat"><div class="label">최고점</div><div class="value" id="best">0</div></div>
+  </div>
+
+  <div class="stage">
+    <div class="history" id="history"></div>
+    <div class="target" id="target">?</div>
+    <div class="queue" id="queue"></div>
+  </div>
+  <div class="combo-area">
+    <div class="combo-num zero" id="combo">0</div>
+    <div class="combo-label" id="comboLabel"></div>
+    <div class="combo-bonus" id="comboBonus"></div>
+  </div>
+  <div class="timebar"><div id="bar"></div></div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="qwe" selected>QWE 모드</option>
+      <option value="arrow">방향키 모드</option>
+    </select>
+    <select id="duration">
+      <option value="30">30초</option>
+      <option value="60" selected>60초</option>
+      <option value="120">120초</option>
+    </select>
+    <button id="startBtn">시작 (Space)</button>
+    <button id="pauseBtn" class="secondary" disabled>일시정지 (Esc)</button>
+  </div>
+
+  <div class="msg" id="msg">시작 버튼이나 <b>Space</b>를 누르세요.<br>화면에 나온 글자의 키를 최대한 빨리 누르면 됩니다.</div>
+</div>
+
+<canvas id="fx" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:10"></canvas>
+
+<script>
+  // 모드별 키 구성
+  const MODES = {
+    qwe:   { keys: ['Q', 'W', 'E', 'A', 'S', 'D', 'Z', 'X', 'C'] },
+    arrow: { keys: ['UP', 'DOWN', 'LEFT', 'RIGHT'] }
+  };
+  const ARROW_CODES = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
+  const ARROW_ROT = { UP: 0, RIGHT: 90, DOWN: 180, LEFT: 270 };
+  let mode = 'qwe', KEYS = MODES.qwe.keys;
+
+  // 키 표시용 HTML (방향키는 굵은 화살표 SVG, 글자색을 그대로 따라감)
+  function label(k) {
+    if (!(k in ARROW_ROT)) return k;
+    return `<svg viewBox="0 0 24 24" style="width:.9em;height:.9em;display:block;fill:currentColor;transform:rotate(${ARROW_ROT[k]}deg)">` +
+      `<path d="M12 2 L22 12.5 H16 V22 H8 V12.5 H2 Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+  }
+
+  const $ = id => document.getElementById(id);
+  const targetEl = $('target'), barEl = $('bar'), msgEl = $('msg');
+  // 콤보용 스타일 글씨. h = 표시 높이(px)
+  function glyphHTML(text, h, extra = '') {
+    const t = String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    return `<span class="bm" data-t="${t}" style="font-size:${h * 0.8}px;${extra}"><span class="bm-fill">${t}</span></span>`;
+  }
+
+  const setGlyph = (el, text, h) => { el.innerHTML = glyphHTML(text, h); };
+  const COMBO_H = 58, COMBO_LABEL_H = 26, BONUS_H = 24;
+
+  // 최고점은 모드별로 따로 저장 (QWE 모드는 기존 키 유지)
+  const bestKey = () => mode === 'qwe' ? 'qwe-game-best' : 'qwe-game-best-' + mode;
+  let best = 0;
+  function loadBest() {
+    best = 0;
+    try { best = Number(localStorage.getItem(bestKey())) || 0; } catch (e) {}
+    $('best').textContent = best;
+  }
+  loadBest();
+
+  let playing = false, current = null, score = 0, combo = 0, maxCombo = 0;
+  let hits = 0, misses = 0, reactionSum = 0, shownAt = 0;
+  let endTime = 0, totalMs = 0, timerId = null;
+
+  // 다음에 나올 글자 미리보기 (오른쪽으로 갈수록 작고 흐리게)
+  const PREVIEW_COUNT = 5;
+  const PREVIEW_SIZES = [40, 34, 28, 24, 20];
+  let queue = [];
+
+  function randomKey(prev) {
+    let k;
+    do { k = KEYS[Math.floor(Math.random() * KEYS.length)]; } while (k === prev);
+    return k;
+  }
+
+  function fillQueue() {
+    while (queue.length < PREVIEW_COUNT) {
+      queue.push(randomKey(queue.length ? queue[queue.length - 1] : current));
+    }
+  }
+
+  function renderQueue() {
+    $('queue').innerHTML = queue.map((k, i) =>
+      `<span style="font-size:${PREVIEW_SIZES[i]}px;opacity:${1 - i * 0.17}">${label(k)}</span>`
+    ).join('');
+  }
+
+  // 지나간 글자 (왼쪽으로 갈수록 작고 흐리게, 맞으면 초록·틀린 적 있으면 빨강)
+  let history = [], missedCurrent = false;
+
+  function renderHistory() {
+    const n = history.length;
+    $('history').innerHTML = history.map((h, i) => {
+      const d = n - 1 - i; // 0 = 가장 최근 (큰 글자 바로 옆)
+      return `<span class="${h.ok ? 'ok' : 'ng'}" style="font-size:${PREVIEW_SIZES[d]}px;opacity:${1 - d * 0.17}">${label(h.k)}</span>`;
+    }).join('');
+  }
+
+  function nextTarget() {
+    fillQueue();
+    const k = queue.shift();
+    current = k;
+    fillQueue();
+    renderQueue();
+    targetEl.innerHTML = label(k);
+    targetEl.dataset.key = k;
+    targetEl.classList.remove('end', 'bad');
+    targetEl.classList.add('pop');
+    setTimeout(() => targetEl.classList.remove('pop'), 80);
+    shownAt = performance.now();
+  }
+
+  function flash(el, cls, ms = 150) {
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), ms);
+  }
+
+  // 콤보 과열 단계: 10마다 1단계씩, 최대 5단계
+  let heat = 0;
+  function updateHeat() {
+    const h = Math.min(5, Math.floor(combo / 10));
+    if (h === heat) return;
+    const area = document.querySelector('.combo-area');
+    area.classList.remove('heat-' + heat);
+    if (h) area.classList.add('heat-' + h);
+    area.classList.toggle('hot', h > 0);
+    heat = h;
+    if (h) startFx();
+  }
+
+  function updateStats() {
+    $('score').textContent = score;
+    setGlyph($('combo'), combo, COMBO_H);
+    $('combo').classList.toggle('zero', combo === 0);
+    updateHeat();
+    $('maxCombo').textContent = maxCombo;
+    const total = hits + misses;
+    $('acc').textContent = total ? Math.round(hits / total * 100) + '%' : '-';
+  }
+
+  // ── 콤보 10단위 원형 폭발 이펙트 (큰 글자 중심) ──
+  const fx = $('fx'), ctx = fx.getContext('2d');
+  let bursts = [], fxRunning = false;
+
+  function burst() {
+    const r = targetEl.getBoundingClientRect();
+    const rays = [];
+    for (let i = 0; i < 24; i++) {
+      rays.push({ a: Math.random() * Math.PI * 2, w: 0.02 + Math.random() * 0.06, len: 0.6 + Math.random() * 0.6 });
+    }
+    bursts.push({ x: r.left + r.width / 2, y: r.top + r.height / 2, t0: performance.now(), rays });
+    // 프레임 강조
+    targetEl.classList.remove('milestone');
+    void targetEl.offsetWidth;
+    targetEl.classList.add('milestone');
+    setTimeout(() => targetEl.classList.remove('milestone'), 900);
+    startFx();
+  }
+
+  function startFx() {
+    if (!fxRunning) { fxRunning = true; lastFrame = performance.now(); requestAnimationFrame(drawFx); }
+  }
+
+  // 콤보 숫자 주변에서 피어오르는 불꽃 (보라·흰·파랑)
+  let sparks = [], lastFrame = 0;
+  const SPARK_RATE = [0, 10, 22, 40, 60, 85];   // 단계별 초당 생성 수
+  const SPARK_COLORS = [[180, 100, 255], [255, 255, 255], [100, 180, 255], [140, 120, 255]];
+
+  function spawnSparks(dt) {
+    if (!playing || paused || !heat) return;
+    let n = SPARK_RATE[heat] * dt;
+    const r = $('combo').getBoundingClientRect();
+    while (n > 0) {
+      if (n < 1 && Math.random() > n) break;
+      n--;
+      const c = SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)];
+      sparks.push({
+        x: r.left - 10 + Math.random() * (r.width + 20),
+        y: r.top + r.height * Math.random() * 0.3,   // 숫자 윗부분에서 생성 → 위로 피어올라 숫자를 가리지 않음
+        vx: (Math.random() - .5) * (30 + heat * 20),
+        vy: -(40 + Math.random() * (40 + heat * 30)),
+        life: 0, max: .5 + Math.random() * (.4 + heat * .1),
+        s: 1.2 + Math.random() * (1 + heat * .5),
+        c
+      });
+    }
+  }
+
+  function drawSparks(dt) {
+    // 불꽃이 올라갈 수 있는 상한선 = 큰 글자 프레임 아래쪽 (프레임을 가리지 않도록)
+    const ceil = targetEl.getBoundingClientRect().bottom + 8;
+    sparks = sparks.filter(p => (p.life += dt) < p.max && p.y > ceil);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of sparks) {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx += (Math.random() - .5) * 200 * dt;
+      const a = (1 - p.life / p.max) * Math.min(1, (p.y - ceil) / 18);   // 상한선에 가까울수록 흐려짐
+      if (a <= 0) continue;
+      const [r, g, b] = p.c;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a * .25})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.s * 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawFx(now) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = innerWidth, H = innerHeight;
+    if (fx.width !== W * dpr || fx.height !== H * dpr) { fx.width = W * dpr; fx.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const dt = Math.min(.05, (now - lastFrame) / 1000);
+    lastFrame = now;
+    spawnSparks(dt);
+    drawSparks(dt);
+    const DUR = 1100;
+    bursts = bursts.filter(b => now - b.t0 < DUR);
+
+    for (const b of bursts) {
+      const t = (now - b.t0) / DUR;                // 0 → 1
+      const ease = 1 - Math.pow(1 - t, 3);
+      const fade = 1 - t;
+      const R = 105 + ease * 200;                   // 원 반경
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+
+      // 프레임 바깥쪽 은은한 광원 (프레임 안쪽 글자는 가리지 않음)
+      const g = ctx.createRadialGradient(b.x, b.y, 100, b.x, b.y, R);
+      g.addColorStop(0, `rgba(175,130,255,${0.3 * fade})`);
+      g.addColorStop(0.5, `rgba(100,160,255,${0.14 * fade})`);
+      g.addColorStop(1, 'rgba(90,140,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(b.x, b.y, R, 0, Math.PI * 2); ctx.arc(b.x, b.y, 100, 0, Math.PI * 2); ctx.fill('evenodd');
+
+      // 방사형 빛줄기 (프레임 바깥에서 시작)
+      for (const ray of b.rays) {
+        const a = ray.a + t * 0.4;
+        const L = 100 + (R - 100) * ray.len * 1.2, r0 = 100;
+        const x0 = b.x + Math.cos(a) * r0, y0 = b.y + Math.sin(a) * r0;
+        const lg = ctx.createLinearGradient(x0, y0, b.x + Math.cos(a) * L, b.y + Math.sin(a) * L);
+        lg.addColorStop(0, `rgba(210,195,255,${0.32 * fade})`);
+        lg.addColorStop(1, 'rgba(110,160,255,0)');
+        ctx.fillStyle = lg;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(b.x + Math.cos(a - ray.w) * L, b.y + Math.sin(a - ray.w) * L);
+        ctx.lineTo(b.x + Math.cos(a + ray.w) * L, b.y + Math.sin(a + ray.w) * L);
+        ctx.closePath(); ctx.fill();
+      }
+
+      // 퍼져나가는 원 테두리
+      ctx.strokeStyle = `rgba(225,215,255,${0.45 * fade})`;
+      ctx.lineWidth = 2.5 * fade + 0.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, R * 1.05, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = `rgba(140,185,255,${0.25 * fade})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(100, R * 0.85), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    if (bursts.length || sparks.length || (playing && heat)) requestAnimationFrame(drawFx);
+    else { ctx.clearRect(0, 0, W, H); fxRunning = false; }
+  }
+
+  // ── 콤보 끊김: 숫자가 칼날에 베여 두 조각으로 갈라지는 연출 ──
+  function slashCombo(n) {
+    const r = $('combo').querySelector('.bm').getBoundingClientRect();
+    const w = r.width, h = r.height;
+    const box = document.createElement('div');
+    box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${w}px;height:${h}px;pointer-events:none;z-index:11`;
+
+    // 베인 선: 왼쪽 62% 높이 → 오른쪽 38% 높이 (살짝 올라가는 사선)
+    const yL = 0.62, yR = 0.38;
+    const piece = clip => {
+      const d = document.createElement('div');
+      d.style.cssText = `position:absolute;inset:0;display:flex;justify-content:center;clip-path:polygon(${clip})`;
+      d.innerHTML = glyphHTML(n, COMBO_H);
+      box.appendChild(d);
+      return d;
+    };
+    // 베인 선을 박스 밖(-50%~150%)까지 연장해서, 충격파로 부풀 때 빛이 잘리지 않도록 함
+    const yA = (yL - (yR - yL) * .5) * 100, yB = (yL + (yR - yL) * 1.5) * 100;
+    const top = piece(`-50% -50%,150% -50%,150% ${yB}%,-50% ${yA}%`);
+    const bot = piece(`-50% ${yA}%,150% ${yB}%,150% 150%,-50% 150%`);
+
+    // 칼날 궤적
+    const ang = Math.atan2((yR - yL) * h, w) * 180 / Math.PI;
+    const len = Math.hypot(w, (yR - yL) * h) * 1.8;
+    const blade = document.createElement('div');
+    blade.style.cssText = `position:absolute;left:50%;top:50%;width:${len}px;height:3px;margin-left:${-len / 2}px;margin-top:-1.5px;` +
+      `background:linear-gradient(90deg,transparent,#fff 30%,#fff 70%,transparent);border-radius:2px;` +
+      `box-shadow:0 0 8px #fff,0 0 16px rgba(120,170,255,.9),0 0 28px rgba(170,90,255,.8);transform-origin:center`;
+    box.appendChild(blade);
+    document.body.appendChild(box);
+
+    // 조각이 흩어지는 동안 실제 콤보 숫자(0)는 잠깐 숨김
+    const real = $('combo');
+    real.style.visibility = 'hidden';
+    clearTimeout(slashCombo.t);
+    slashCombo.t = setTimeout(() => { real.style.visibility = ''; }, 450);
+
+    // 1) 칼날이 왼쪽에서 오른쪽으로 긋고 사라짐
+    blade.animate([
+      { transform: `rotate(${ang}deg) scaleX(0)`, transformOrigin: '0% 50%', opacity: 1 },
+      { transform: `rotate(${ang}deg) scaleX(1)`, transformOrigin: '0% 50%', opacity: 1, offset: .35 },
+      { transform: `rotate(${ang}deg) scaleX(1)`, transformOrigin: '0% 50%', opacity: 0 }
+    ], { duration: 320, easing: 'ease-out', fill: 'forwards' });
+
+    // 2) 잠깐 멈췄다가 베인 면을 따라 위·아래 조각이 미끄러지며 떨어짐
+    const rad = ang * Math.PI / 180, ux = Math.cos(rad), uy = Math.sin(rad);
+    const slide = (el, dir, fall, rot) => el.animate([
+      { transform: 'translate(0,0) rotate(0)', opacity: 1 },
+      { transform: 'translate(0,0) rotate(0)', opacity: 1, offset: .2 },
+      { transform: `translate(${ux * 40 * dir}px,${uy * 40 * dir + fall}px) rotate(${rot}deg)`, opacity: 0 }
+    ], { duration: 700, delay: 60, easing: 'cubic-bezier(.3,0,.8,.6)', fill: 'forwards' });
+    // 3) 베이는 순간 충격파: 숫자 자체가 번쩍 부풀었다 돌아오고, 빛 고리가 퍼져나감
+    const IMPACT = 100;   // 칼날이 끝까지 그어지는 시점
+    for (const el of [top, bot]) {
+      el.firstElementChild.animate([
+        { transform: 'scale(1)', filter: 'brightness(1)' },
+        { transform: 'scale(1.22)', filter: 'brightness(2.2) drop-shadow(0 0 10px #fff) drop-shadow(0 0 18px rgba(140,120,255,1))', offset: .3 },
+        { transform: 'scale(1)', filter: 'brightness(1)' }
+      ], { duration: 280, delay: IMPACT, easing: 'ease-out' });
+    }
+    const ring = (size, color, dur, delay) => {
+      const d = document.createElement('div');
+      d.style.cssText = `position:absolute;left:50%;top:50%;width:${size}px;height:${size * .62}px;` +
+        `margin:${-size * .31}px 0 0 ${-size / 2}px;border-radius:50%;border:2px solid ${color};` +
+        `box-shadow:0 0 12px ${color},inset 0 0 10px ${color};opacity:0`;
+      box.appendChild(d);
+      d.animate([
+        { transform: 'scale(.4)', opacity: .95 },
+        { transform: 'scale(2.1)', opacity: 0 }
+      ], { duration: dur, delay: IMPACT + delay, easing: 'cubic-bezier(.1,.7,.3,1)' });
+    };
+    ring(w * 1.1, 'rgba(235,225,255,.9)', 420, 0);
+    ring(w * 1.1, 'rgba(120,165,255,.75)', 520, 70);
+
+    slide(top, 1, -6, 8);
+    slide(bot, -1, 22, -6).onfinish = () => box.remove();
+  }
+
+  let bonusTimer = null;
+  function showComboBonus(text) {
+    const el = $('comboBonus');
+    setGlyph(el, text, BONUS_H);
+    el.classList.add('show');
+    clearTimeout(bonusTimer);
+    bonusTimer = setTimeout(() => el.classList.remove('show'), 900);
+  }
+
+  function handleInput(k) {
+    if (!playing || paused) return;
+
+    if (k === current) {
+      const rt = performance.now() - shownAt;
+      reactionSum += rt;
+      hits++;
+      history.push({ k: current, ok: !missedCurrent });
+      if (history.length > PREVIEW_COUNT) history.shift();
+      missedCurrent = false;
+      renderHistory();
+      combo++;
+      maxCombo = Math.max(maxCombo, combo);
+      // 기본 10점 + 빠를수록 보너스
+      const speedBonus = Math.max(0, Math.round((1000 - rt) / 100));
+      score += 10 + speedBonus;
+      // 콤보 10, 20, 30... 달성 시 지금까지 점수의 1%, 2%, 3%... 보너스
+      if (combo % 10 === 0) {
+        const p = combo / 10;
+        const bonus = Math.round(score * p / 100);
+        score += bonus;
+        showComboBonus(`+${bonus} (${p}%)`);
+        burst();
+      }
+      flash($('combo'), 'pop', 80);
+      nextTarget();
+    } else {
+      misses++;
+      missedCurrent = true;
+      if (combo > 0) slashCombo(combo);
+      combo = 0;
+      score = Math.max(0, score - 5);
+      targetEl.classList.remove('bad');
+      void targetEl.offsetWidth;
+      targetEl.classList.add('bad');
+      setTimeout(() => targetEl.classList.remove('bad'), 250);
+    }
+    updateStats();
+  }
+
+  function tick() {
+    const left = endTime - performance.now();
+    barEl.style.width = Math.max(0, left / totalMs * 100) + '%';
+    msgEl.innerHTML = `남은 시간 <b>${Math.max(0, left / 1000).toFixed(1)}초</b>`;
+    if (left <= 0) endGame();
+  }
+
+  // Space / 시작 버튼 → 3·2·1 카운트다운 후 게임 시작
+  let countdownTimer = null;
+  // ── 일시정지 ──
+  let paused = false, pausedAt = 0;
+  function setPaused(on) {
+    if (!playing || on === paused) return;
+    paused = on;
+    document.querySelector('.game').classList.toggle('paused', on);
+    $('pauseBtn').textContent = on ? '계속하기 (Esc)' : '일시정지 (Esc)';
+    if (on) {
+      pausedAt = performance.now();
+      clearInterval(timerId);
+      msgEl.innerHTML = `일시정지 · 남은 시간 <b>${Math.max(0, (endTime - pausedAt) / 1000).toFixed(1)}초</b><br><b>Esc</b> 또는 계속하기 버튼으로 재개`;
+    } else {
+      const d = performance.now() - pausedAt;   // 멈춰 있던 시간만큼 타이머·반응속도 기준을 뒤로 미룸
+      endTime += d;
+      shownAt += d;
+      timerId = setInterval(tick, 50);
+      tick();
+      if (heat) startFx();
+    }
+  }
+
+  function startCountdown() {
+    if (paused) { paused = false; document.querySelector('.game').classList.remove('paused'); }
+    $('pauseBtn').disabled = true;
+    $('pauseBtn').textContent = '일시정지 (Esc)';
+    clearInterval(timerId);
+    clearTimeout(countdownTimer);
+    playing = false;
+    score = combo = maxCombo = hits = misses = reactionSum = 0;
+    current = null;
+    queue = []; renderQueue();
+    history = []; renderHistory();
+    updateStats();
+    barEl.style.width = '100%';
+    $('startBtn').textContent = '다시 시작 (Space)';
+    msgEl.innerHTML = '준비…';
+    let n = 3;
+    (function step() {
+      if (n === 0) { countdownTimer = null; startGame(); return; }
+      targetEl.textContent = n;
+      targetEl.className = 'target';
+      void targetEl.offsetWidth;          // 애니메이션 재시작
+      targetEl.classList.add('count');
+      n--;
+      countdownTimer = setTimeout(step, 1000);
+    })();
+  }
+
+  function startGame() {
+    targetEl.classList.remove('count');
+    playing = true;
+    $('pauseBtn').disabled = false;
+    score = combo = maxCombo = hits = misses = reactionSum = 0;
+    totalMs = Number($('duration').value) * 1000;
+    endTime = performance.now() + totalMs;
+    $('startBtn').textContent = '다시 시작 (Space)';
+    current = null;
+    queue = [];
+    history = [];
+    missedCurrent = false;
+    renderHistory();
+    updateStats();
+    nextTarget();
+    clearInterval(timerId);
+    timerId = setInterval(tick, 50);
+  }
+
+  function endGame() {
+    $('pauseBtn').disabled = true;
+    playing = false;
+    clearInterval(timerId);
+    current = null;
+    queue = [];
+    renderQueue();
+    targetEl.textContent = '끝!';
+    targetEl.className = 'target end';
+    barEl.style.width = '0%';
+
+    const avg = hits ? Math.round(reactionSum / hits) : 0;
+    let newBest = '';
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem(bestKey(), best); } catch (e) {}
+      $('best').textContent = best;
+      newBest = ' 🎉 <b>최고 기록!</b>';
+    }
+    msgEl.innerHTML = `점수 <b>${score}</b> · 정답 <b>${hits}</b> · 오답 <b>${misses}</b><br>` +
+      `평균 반응속도 <b>${avg}ms</b> · 최대 콤보 <b>${maxCombo}</b>${newBest}`;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.repeat) return;
+    if (e.code === 'Escape') {
+      setPaused(!paused);
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      startCountdown();
+      return;
+    }
+    if (mode === 'arrow') {
+      const k = ARROW_CODES[e.code];
+      if (k) { e.preventDefault(); handleInput(k); }   // 페이지 스크롤·셀렉트 변경 방지
+      return;
+    }
+    // e.code 사용 → 한글 입력 상태에서도 물리 키 위치로 인식
+    const m = /^Key([A-Z])$/.exec(e.code);
+    if (m && KEYS.includes(m[1])) handleInput(m[1]);
+  });
+
+  // 게임 중·카운트다운 중·일시정지 중에 모드/시간을 바꾸면 진행 중인 판을 그만두고 대기 상태로
+  function resetToIdle() {
+    clearInterval(timerId);
+    clearTimeout(countdownTimer);
+    countdownTimer = null;
+    playing = false;
+    paused = false;
+    document.querySelector('.game').classList.remove('paused');
+    score = combo = maxCombo = hits = misses = reactionSum = 0;
+    current = null;
+    queue = []; renderQueue();
+    history = []; renderHistory();
+    updateStats();
+    targetEl.className = 'target';
+    targetEl.textContent = '?';
+    barEl.style.width = '100%';
+    $('pauseBtn').disabled = true;
+    $('pauseBtn').textContent = '일시정지 (Esc)';
+    $('startBtn').textContent = '시작 (Space)';
+    msgEl.innerHTML = mode === 'arrow'
+      ? '시작 버튼이나 <b>Space</b>를 누르세요.<br>화면에 나온 화살표 방향의 <b>방향키</b>를 최대한 빨리 누르면 됩니다.'
+      : '시작 버튼이나 <b>Space</b>를 누르세요.<br>화면에 나온 글자의 키를 최대한 빨리 누르면 됩니다.';
+  }
+
+  $('mode').addEventListener('change', e => {
+    mode = e.target.value;
+    KEYS = MODES[mode].keys;
+    e.target.blur();
+    loadBest();
+    resetToIdle();
+  });
+  $('duration').addEventListener('change', e => {
+    e.target.blur();
+    if (playing || countdownTimer) resetToIdle();
+  });
+
+  setGlyph($('comboLabel'), 'COMBO', COMBO_LABEL_H);
+  updateStats();
+
+  $('pauseBtn').addEventListener('click', e => { e.target.blur(); setPaused(!paused); });
+  $('startBtn').addEventListener('click', e => { e.target.blur(); startCountdown(); });
+</script>
+</body>
+</html>
