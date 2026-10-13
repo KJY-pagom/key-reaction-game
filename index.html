@@ -745,10 +745,21 @@
   let countdownTimer = null;
   // ── 일시정지 ──
   let paused = false, pausedAt = 0;
-  // ── 자판 영역 배경: 가로로 흘러가는 창밖 풍경 ──
-  // 먼 층은 느리게, 가까운 층은 빠르게(시차). 콤보가 쌓일수록 목표 속도가 올라가고 부드럽게 가속함.
-  const scene = { cv: $('sceneCanvas'), ctx: null, w: 0, h: 0, last: 0, speed: 1, layers: [] };
+  // ── 자판 영역 배경: 얇은 선들이 오른쪽 → 왼쪽으로 스쳐 지나감 ──
+  // 선마다 속도·길이·밝기를 다르게(원근감). 콤보가 쌓일수록 목표 속도가 올라가고 부드럽게 가속함.
+  const scene = { cv: $('sceneCanvas'), ctx: null, w: 0, h: 0, last: 0, speed: 1, lines: [] };
   function rnd(a, b) { return a + Math.random() * (b - a); }
+  function newLine(w, h, x) {
+    const depth = Math.random();                     // 0 = 멀리, 1 = 가까이
+    return {
+      x: x ?? rnd(0, w), y: rnd(4, h - 4),
+      v: 40 + depth * 180,                           // 가까울수록 빠름
+      len: 20 + depth * 70 + rnd(0, 30),
+      th: .5 + depth * 1,                            // 두께
+      a: .05 + depth * .14,
+      c: Math.random() < .25 ? '170,150,255' : '200,230,255'
+    };
+  }
   function sizeScene() {
     const r = scene.cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     if (!r.width) return;
@@ -756,17 +767,7 @@
     scene.ctx = scene.cv.getContext('2d');
     scene.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     scene.w = r.width; scene.h = r.height;
-    const w = scene.w, h = scene.h, make = (n, f) => Array.from({ length: n }, f);
-    scene.layers = [
-      // 먼 언덕·숲: 크고 흐릿한 청록 덩어리
-      { v: 5, kind: 'blob', items: make(7, () => ({ x: rnd(0, w), y: rnd(h * .45, h), rx: rnd(60, 130), ry: rnd(25, 50), a: rnd(.06, .12) })) },
-      // 먼 마을 불빛: 호박색 점
-      { v: 16, kind: 'light', items: make(12, () => ({ x: rnd(0, w), y: rnd(h * .35, h * .9), r: rnd(1, 2.2), a: rnd(.25, .55) })) },
-      // 가까이 스치는 전신주 그림자
-      { v: 55, kind: 'pole', items: make(3, () => ({ x: rnd(0, w * 1.5), wdt: rnd(5, 12), a: rnd(.18, .3) })) },
-      // 속도감 빛줄기 (가속할수록 길고 진해짐)
-      { v: 120, kind: 'streak', items: make(8, () => ({ x: rnd(0, w), y: rnd(8, h - 8), len: rnd(30, 80), a: rnd(.08, .2) })) }
-    ];
+    scene.lines = Array.from({ length: 34 }, () => newLine(r.width, r.height));
   }
   function drawScene(now) {
     requestAnimationFrame(drawScene);
@@ -776,39 +777,17 @@
     // 목표 속도: 콤보 0 → 1배, 콤보 60 이상 → 3.5배. 실제 속도는 천천히 따라감(가속감)
     const target = playing ? 1 + Math.min(combo, 60) / 60 * 2.5 : .6;
     scene.speed += (target - scene.speed) * Math.min(1, dt * 1.5);
-    const k = scene.speed, { ctx: c, w, h } = scene;
-    const bg = c.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, 'rgba(14,40,52,.55)'); bg.addColorStop(1, 'rgba(10,28,36,.75)');
+    const k = scene.speed, boost = Math.max(0, Math.min(1, (k - 1) / 2.5)), { ctx: c, w, h } = scene;
     c.clearRect(0, 0, w, h);
-    c.fillStyle = bg; c.fillRect(0, 0, w, h);
-    const boost = Math.min(1, (k - 1) / 2.5);   // 0 ~ 1, 가속 정도
-    for (const L of scene.layers) {
-      for (const p of L.items) {
-        p.x -= L.v * k * dt;                       // 오른쪽 → 왼쪽 (글자가 흘러가는 방향과 같음)
-        const span = L.kind === 'blob' ? p.rx : L.kind === 'streak' ? p.len : 20;
-        if (p.x + span < 0) { p.x = w + span + rnd(0, w * .4); if (p.y !== undefined && L.kind !== 'blob') p.y = L.kind === 'light' ? rnd(h * .35, h * .9) : rnd(8, h - 8); }
-        if (L.kind === 'blob') {
-          c.save(); c.translate(p.x, p.y); c.scale(1, p.ry / p.rx);
-          const g = c.createRadialGradient(0, 0, 0, 0, 0, p.rx);
-          g.addColorStop(0, `rgba(70,190,185,${p.a})`); g.addColorStop(1, 'rgba(70,190,185,0)');
-          c.fillStyle = g; c.beginPath(); c.arc(0, 0, p.rx, 0, Math.PI * 2); c.fill(); c.restore();
-        } else if (L.kind === 'light') {
-          const tail = 2 + boost * 10;             // 빨라질수록 불빛 꼬리가 늘어남
-          const g = c.createLinearGradient(p.x, 0, p.x + tail, 0);
-          g.addColorStop(0, `rgba(255,190,110,${p.a})`); g.addColorStop(1, 'rgba(255,190,110,0)');
-          c.fillStyle = g; c.fillRect(p.x, p.y - p.r / 2, tail, p.r);
-          c.fillStyle = `rgba(255,190,110,${p.a})`; c.beginPath(); c.arc(p.x, p.y, p.r, 0, Math.PI * 2); c.fill();
-        } else if (L.kind === 'pole') {
-          const g = c.createLinearGradient(p.x - p.wdt, 0, p.x + p.wdt, 0);
-          g.addColorStop(0, 'rgba(0,6,10,0)'); g.addColorStop(.5, `rgba(0,6,10,${p.a})`); g.addColorStop(1, 'rgba(0,6,10,0)');
-          c.fillStyle = g; c.fillRect(p.x - p.wdt, 0, p.wdt * 2, h);
-        } else {
-          const a = p.a * (.3 + boost * 1.2), len = p.len * (1 + boost);
-          const g = c.createLinearGradient(p.x, 0, p.x + len, 0);
-          g.addColorStop(0, 'rgba(200,250,255,0)'); g.addColorStop(.3, `rgba(200,250,255,${a})`); g.addColorStop(1, 'rgba(200,250,255,0)');
-          c.fillStyle = g; c.fillRect(p.x, p.y, len, 1.2);
-        }
-      }
+    for (const L of scene.lines) {
+      L.x -= L.v * k * dt;
+      const len = L.len * (1 + boost * 1.2);         // 빨라질수록 선이 길어짐
+      if (L.x + len < 0) Object.assign(L, newLine(w, h, w + rnd(0, w * .3)));
+      const a = L.a * (1 + boost * .8);
+      const g = c.createLinearGradient(L.x, 0, L.x + len, 0);
+      g.addColorStop(0, `rgba(${L.c},${a})`); g.addColorStop(1, `rgba(${L.c},0)`);
+      c.fillStyle = g;
+      c.fillRect(L.x, L.y, len, L.th);
     }
   }
   window.addEventListener('resize', sizeScene);
