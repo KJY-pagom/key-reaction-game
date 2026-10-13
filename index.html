@@ -73,6 +73,7 @@
     justify-content: center;
     transition: transform .08s, border-color .1s;
   }
+  .target .ink { display: block; line-height: 1; }
   .target.end { font-size: 44px; }
   .target.count { color: var(--accent); animation: countPop 1s ease-out; }
   @keyframes countPop {
@@ -400,13 +401,35 @@
     }).join('');
   }
 
+  // 큰 글자를 프레임 정중앙에 배치: 글꼴 상자 기준이 아니라 실제 잉크(획) 영역 기준으로 보정
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  const inkCache = {};
+  function setTarget(content) {
+    targetEl.innerHTML = `<span class="ink">${content}</span>`;
+    const ink = targetEl.firstChild;
+    if (ink.querySelector('svg')) return;            // 화살표 SVG는 이미 대칭
+    const cs = getComputedStyle(targetEl);
+    const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const key = font + '|' + content;
+    if (!inkCache[key]) {
+      measureCtx.font = font;
+      const m = measureCtx.measureText(String(content));
+      const dx = m.width / 2 - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2;
+      const dy = (m.fontBoundingBoxDescent - m.fontBoundingBoxAscent) / 2
+               - (m.actualBoundingBoxDescent - m.actualBoundingBoxAscent) / 2;
+      inkCache[key] = [dx, dy];
+    }
+    const [dx, dy] = inkCache[key];
+    ink.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  }
+
   function nextTarget() {
     fillQueue();
     const k = queue.shift();
     current = k;
     fillQueue();
     renderQueue();
-    targetEl.innerHTML = label(k);
+    setTarget(label(k));
     targetEl.dataset.key = k;
     targetEl.classList.remove('end', 'bad');
     targetEl.classList.add('pop');
@@ -744,7 +767,7 @@
     let n = 3;
     (function step() {
       if (n === 0) { countdownTimer = null; startGame(); return; }
-      targetEl.textContent = n;
+      setTarget(n);
       targetEl.className = 'target';
       void targetEl.offsetWidth;          // 애니메이션 재시작
       targetEl.classList.add('count');
@@ -779,8 +802,8 @@
     current = null;
     queue = [];
     renderQueue();
-    targetEl.textContent = '끝!';
-    targetEl.className = 'target end';
+    targetEl.className = 'target end';   // 글자 크기를 먼저 바꾼 뒤 중앙 보정
+    setTarget('끝!');
     barEl.style.width = '0%';
 
     const avg = hits ? Math.round(reactionSum / hits) : 0;
@@ -830,7 +853,7 @@
     history = []; renderHistory();
     updateStats();
     targetEl.className = 'target';
-    targetEl.textContent = '?';
+    setTarget('?');
     barEl.style.width = '100%';
     $('pauseBtn').disabled = true;
     $('pauseBtn').textContent = '일시정지 (Esc)';
@@ -853,6 +876,7 @@
   });
 
   setGlyph($('comboLabel'), 'COMBO', COMBO_LABEL_H);
+  setTarget('?');
   updateStats();
 
   $('pauseBtn').addEventListener('click', e => { e.target.blur(); setPaused(!paused); });
