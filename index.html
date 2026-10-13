@@ -111,8 +111,9 @@
   .queue span {
     font-weight: 800;
     line-height: 1;
-    color: var(--muted);
+    color: #cfd4e2;
   }
+  .queue span:first-child { color: var(--text); }   /* 바로 다음 글자는 가장 또렷하게 */
   .target.pop { transform: scale(1.15); }
   .target.good { color: var(--good); border-color: var(--good); }
   .target.bad { color: var(--bad); border-color: var(--bad); animation: shake .25s; }
@@ -367,6 +368,7 @@
   // 다음에 나올 글자 미리보기 (오른쪽으로 갈수록 작고 흐리게)
   const PREVIEW_COUNT = 5;
   const PREVIEW_SIZES = [40, 34, 28, 24, 20];
+  const QUEUE_SIZES = [44, 38, 33, 29, 25];        // 다음 글자는 지나간 글자보다 조금 크게
   let queue = [];
 
   function randomKey(prev) {
@@ -383,7 +385,7 @@
 
   function renderQueue() {
     $('queue').innerHTML = queue.map((k, i) =>
-      `<span style="font-size:${PREVIEW_SIZES[i]}px;opacity:${1 - i * 0.17}">${label(k)}</span>`
+      `<span style="font-size:${QUEUE_SIZES[i]}px;opacity:${1 - i * 0.12}">${label(k)}</span>`
     ).join('');
   }
 
