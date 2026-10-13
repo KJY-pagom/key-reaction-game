@@ -258,14 +258,36 @@
   button.secondary { background: var(--panel); color: var(--text); }
   button:disabled { opacity: .4; cursor: default; }
   /* 일시정지 중에는 글자를 가려서 미리 볼 수 없게 */
-  .game.paused .stage > * { filter: blur(14px); opacity: .5; transition: filter .15s; }
-  .game.paused .stage { position: relative; }
-  .game.paused .stage::after {
-    content: 'PAUSE';
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 34px; font-weight: 800; letter-spacing: 6px; color: var(--text);
+  .game.paused .stage > :not(.pause-scene) { filter: blur(14px); opacity: .5; transition: filter .15s; }
+  .stage { position: relative; }
+  /* 일시정지 화면: 기차 창밖 풍경이 세로로 흘러가는 느낌 (게임 본 테마와 다른 청록·호박색 밤 풍경) */
+  .pause-scene {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: none;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #0a1d26;
   }
+  .game.paused .pause-scene { display: block; animation: sceneIn .25s ease-out; }
+  @keyframes sceneIn { from { opacity: 0; } to { opacity: 1; } }
+  .pause-scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .ps-glass {                       /* 창틀 + 유리 반사 */
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 3px rgba(190, 230, 235, .14), inset 0 0 0 7px rgba(0, 0, 0, .35), inset 0 0 45px rgba(0, 0, 0, .65);
+    background: linear-gradient(115deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,0) 28%, rgba(255,255,255,0) 62%, rgba(255,255,255,.05) 75%, rgba(255,255,255,0) 90%);
+    pointer-events: none;
+  }
+  .ps-label {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    color: #eafcff;
+    font-size: 34px; font-weight: 800; letter-spacing: 8px;
+    text-shadow: 0 0 18px rgba(90, 220, 220, .55), 0 2px 6px rgba(0, 0, 0, .6);
+  }
+  .ps-label small { font-size: 12px; font-weight: 600; letter-spacing: 3px; color: rgba(220, 245, 245, .7); text-shadow: none; }
   button, select {
     background: var(--accent);
     color: #fff;
@@ -297,6 +319,11 @@
     <div class="history" id="history"></div>
     <div class="target" id="target">?</div>
     <div class="queue" id="queue"></div>
+    <div class="pause-scene" id="pauseScene">
+      <canvas></canvas>
+      <div class="ps-glass"></div>
+      <div class="ps-label">PAUSE<small>ESC로 계속하기</small></div>
+    </div>
   </div>
   <div class="combo-area">
     <div class="combo-num zero" id="combo">0</div>
@@ -730,10 +757,78 @@
   let countdownTimer = null;
   // ── 일시정지 ──
   let paused = false, pausedAt = 0;
+  // ── 일시정지 배경: 세로로 흘러가는 창밖 풍경 (먼 층은 느리게, 가까운 층은 빠르게) ──
+  const scene = { el: null, ctx: null, raf: 0, last: 0, layers: null, w: 0, h: 0 };
+  function makeLayers(w, h) {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const make = (n, f) => Array.from({ length: n }, f);
+    return [
+      // 먼 풍경: 크고 흐릿한 청록 덩어리 (언덕·숲)
+      { speed: 18, items: make(9, () => ({ x: rnd(0, w), y: rnd(-h, h), rx: rnd(50, 120), ry: rnd(30, 70), a: rnd(.10, .22), c: '70,190,185' })) , kind: 'blob' },
+      // 중간: 먼 마을 불빛 (호박색 점이 살짝 늘어짐)
+      { speed: 70, items: make(14, () => ({ x: rnd(0, w), y: rnd(-h, h), r: rnd(1.5, 3.5), len: rnd(6, 16), a: rnd(.35, .8), c: '255,190,110' })), kind: 'light' },
+      // 가까운 층: 빠르게 스치는 전신주·나무 그림자
+      { speed: 260, items: make(4, () => ({ x: rnd(0, w), y: rnd(-h, h), wdt: rnd(14, 40), len: rnd(40, 90), a: rnd(.25, .45) })), kind: 'shadow' },
+      // 가장 가까운 층: 얇고 긴 빛줄기 (속도감)
+      { speed: 520, items: make(10, () => ({ x: rnd(0, w), y: rnd(-h, h), len: rnd(40, 110), a: rnd(.15, .4), c: '200,250,255' })), kind: 'streak' }
+    ];
+  }
+  function startScene() {
+    scene.el = $('pauseScene');
+    const cv = scene.el.querySelector('canvas');
+    const r = scene.el.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = r.width * dpr; cv.height = r.height * dpr;
+    scene.ctx = cv.getContext('2d');
+    scene.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    scene.w = r.width; scene.h = r.height;
+    scene.layers = makeLayers(r.width, r.height);
+    scene.last = performance.now();
+    cancelAnimationFrame(scene.raf);
+    scene.raf = requestAnimationFrame(drawScene);
+  }
+  function stopScene() { cancelAnimationFrame(scene.raf); }
+  function drawScene(now) {
+    const { ctx: c, w, h } = scene;
+    const dt = Math.min(.05, (now - scene.last) / 1000);
+    scene.last = now;
+    // 밤하늘 → 들판 느낌의 세로 그라데이션
+    const bg = c.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#0b2230'); bg.addColorStop(.5, '#123c46'); bg.addColorStop(1, '#0a1d26');
+    c.fillStyle = bg; c.fillRect(0, 0, w, h);
+    for (const L of scene.layers) {
+      for (const p of L.items) {
+        p.y += L.speed * dt;
+        const span = (p.len || p.ry || 0) * 2;
+        if (p.y - span > h) { p.y = -span - Math.random() * h * .5; p.x = Math.random() * w; }
+        if (L.kind === 'blob') {
+          const g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.rx);
+          g.addColorStop(0, `rgba(${p.c},${p.a})`); g.addColorStop(1, `rgba(${p.c},0)`);
+          c.save(); c.translate(p.x, p.y); c.scale(1, p.ry / p.rx); c.translate(-p.x, -p.y);
+          c.fillStyle = g; c.beginPath(); c.arc(p.x, p.y, p.rx, 0, Math.PI * 2); c.fill(); c.restore();
+        } else if (L.kind === 'light') {
+          const g = c.createLinearGradient(p.x, p.y - p.len, p.x, p.y);
+          g.addColorStop(0, `rgba(${p.c},0)`); g.addColorStop(1, `rgba(${p.c},${p.a})`);
+          c.fillStyle = g; c.fillRect(p.x - p.r / 2, p.y - p.len, p.r, p.len);
+          c.fillStyle = `rgba(${p.c},${p.a})`; c.beginPath(); c.arc(p.x, p.y, p.r, 0, Math.PI * 2); c.fill();
+        } else if (L.kind === 'shadow') {
+          const g = c.createLinearGradient(p.x - p.wdt, 0, p.x + p.wdt, 0);
+          g.addColorStop(0, 'rgba(2,10,14,0)'); g.addColorStop(.5, `rgba(2,10,14,${p.a})`); g.addColorStop(1, 'rgba(2,10,14,0)');
+          c.fillStyle = g; c.fillRect(p.x - p.wdt, p.y - p.len, p.wdt * 2, p.len * 2);
+        } else {
+          const g = c.createLinearGradient(p.x, p.y - p.len, p.x, p.y);
+          g.addColorStop(0, `rgba(${p.c},0)`); g.addColorStop(1, `rgba(${p.c},${p.a})`);
+          c.fillStyle = g; c.fillRect(p.x, p.y - p.len, 1.2, p.len);
+        }
+      }
+    }
+    scene.raf = requestAnimationFrame(drawScene);
+  }
+
   function setPaused(on) {
     if (!playing || on === paused) return;
     paused = on;
     document.querySelector('.game').classList.toggle('paused', on);
+    on ? startScene() : stopScene();
     $('pauseBtn').textContent = on ? '계속하기 (Esc)' : '일시정지 (Esc)';
     if (on) {
       pausedAt = performance.now();
@@ -750,7 +845,7 @@
   }
 
   function startCountdown() {
-    if (paused) { paused = false; document.querySelector('.game').classList.remove('paused'); }
+    if (paused) { paused = false; document.querySelector('.game').classList.remove('paused'); stopScene(); }
     $('pauseBtn').disabled = true;
     $('pauseBtn').textContent = '일시정지 (Esc)';
     clearInterval(timerId);
@@ -847,6 +942,7 @@
     playing = false;
     paused = false;
     document.querySelector('.game').classList.remove('paused');
+    stopScene();
     score = combo = maxCombo = hits = misses = reactionSum = 0;
     current = null;
     queue = []; renderQueue();
